@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>F1 Arcade Racing</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="startScreen">
+  <h1>F1 ARCADE</h1>
+  <h2>Grand Prix Racing</h2>
+  <p style="color:#888; margin-bottom:15px;">Elige el color de tu auto:</p>
+  <div class="color-picker" id="colorPicker"></div>
+  <button id="startBtn" onclick="startGame()">INICIAR CARRERA</button>
+  <div class="controls-info">
+    <span>↑/W</span> Acelerar &nbsp; <span>↓/S</span> Frenar &nbsp; <span>←→/A D</span> Girar<br>
+    <span>P</span> Pausar &nbsp; <span>M</span> Silenciar &nbsp; <span>SPACE</span> Freno de mano
+  </div>
+</div>
+
+<div id="countdown"></div>
+
+<div id="hud">
+  <div id="timer">00:00.000</div>
+  <div id="lapInfo">
+    <div id="lapText">VUELTA</div>
+    <div><span id="lapCount">1</span> / <span id="lapTotal">3</span></div>
+  </div>
+  <div id="position">
+    <div id="posValue">1</div>
+    <div id="posTotal">/ 10</div>
+  </div>
+  <div id="speedometer">
+    <div id="speedValue">0</div>
+    <div id="speedUnit">KM/H</div>
+  </div>
+  <div id="gearDisplay">N</div>
+  <div id="nitroLabel">NITRO</div>
+  <div id="nitroBar"><div id="nitroFill"></div></div>
+  <div id="minimap"><canvas id="minimapCanvas" width="180" height="180"></canvas></div>
+  <div id="overtake">¡ADELANTO!</div>
+</div>
+
+<div id="pauseOverlay"><h2>PAUSA</h2></div>
+
+<div id="finishScreen">
+  <h2>🏁 CARRERA TERMINADA</h2>
+  <div class="result">Posición: <span id="finalPos">1</span> / 10</div>
+  <div class="result">Tiempo: <span id="finalTime">00:00.000</span></div>
+  <div class="result">Vueltas completadas: <span id="finalLaps">3</span></div>
+  <br>
+  <button id="startBtn" onclick="restartGame()" style="padding:15px 60px;font-size:20px;font-weight:bold;background:#ff0000;color:#fff;border:none;border-radius:50px;cursor:pointer;pointer-events:all;letter-spacing:3px;text-transform:uppercase;">REINICIAR</button>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="game.js"></script>
+</body>
+</html>
