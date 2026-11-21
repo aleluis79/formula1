@@ -7,6 +7,29 @@ canvas { display: block; }
   pointer-events: none; z-index: 10;
 }
 
+/* Speed lines and tunnel vignette, faded in with speed */
+#speedFX {
+  position: fixed; inset: 0;
+  pointer-events: none;
+  z-index: 9;
+  opacity: 0;
+  background: radial-gradient(circle at 50% 50%,
+    rgba(0, 0, 0, 0) 42%,
+    rgba(0, 0, 0, 0.22) 72%,
+    rgba(0, 0, 0, 0.6) 100%);
+}
+
+#speedFX::before {
+  content: '';
+  position: absolute;
+  inset: -15%;
+  background: repeating-conic-gradient(from 0deg at 50% 50%,
+    rgba(255, 255, 255, 0.09) 0deg 0.3deg,
+    rgba(255, 255, 255, 0) 0.3deg 3deg);
+  -webkit-mask-image: radial-gradient(circle at 50% 50%, transparent 38%, #000 72%);
+  mask-image: radial-gradient(circle at 50% 50%, transparent 38%, #000 72%);
+}
+
 #speedometer {
   position: absolute; bottom: 30px; right: 30px;
   width: 200px; height: 200px;
@@ -38,6 +61,23 @@ canvas { display: block; }
 
 #lapText { font-size: 18px; color: #aaa; }
 #lapCount { font-size: 36px; font-weight: bold; color: #ff0000; }
+
+#circuitInfo {
+  position: absolute; top: 108px; left: 50%; transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.72); border: 1px solid #444;
+  border-radius: 20px; padding: 7px 20px;
+  color: #ddd; font-size: 13px; letter-spacing: 1px; white-space: nowrap;
+}
+
+#rearviewMirror {
+  position: absolute; top: 152px; left: 50%; transform: translateX(-50%);
+  width: min(360px, 72vw); height: 100px;
+  border: 3px solid rgba(255, 255, 255, 0.65);
+  border-radius: 12px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.55), inset 0 0 22px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+  z-index: 11;
+}
 
 #timer {
   position: absolute; top: 20px; left: 30px;
@@ -118,16 +158,104 @@ canvas { display: block; }
   display: none;
 }
 
-#finishScreen {
-  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-  background: rgba(0,0,0,0.9); display: none;
-  flex-direction: column; align-items: center; justify-content: center;
-  z-index: 100;
+@media (max-width: 900px) {
+  #circuitInfo { top: 96px; font-size: 11px; }
+  #rearviewMirror { top: 140px; height: 86px; }
 }
 
-#finishScreen h2 { font-size: 48px; color: #ff0000; margin-bottom: 20px; }
-#finishScreen .result { font-size: 24px; color: #fff; margin: 10px 0; }
-#finishScreen .result span { color: #ff0000; font-weight: bold; }
+.startInfo { color: #aaa; font-size: 14px; margin-bottom: 18px; }
+
+#finishScreen {
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  background: rgba(0, 0, 0, 0.92); display: none;
+  flex-direction: column; align-items: center; justify-content: center;
+  z-index: 100; overflow-y: auto; padding: 30px 20px;
+}
+
+#resultsContent {
+  width: 100%; max-width: 1020px;
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+}
+
+#resultsContent h2 {
+  font-size: 38px; color: #ff0000; text-align: center; margin-bottom: 0;
+}
+
+.resultsSubtitle { color: #bbb; font-size: 17px; text-align: center; }
+.resultsInfo { color: #eee; font-size: 18px; text-align: center; }
+.resultsInfo strong { color: #ff3333; }
+
+.resultsColumns {
+  display: flex; gap: 24px; width: 100%;
+  justify-content: center; align-items: flex-start; flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.resultsPanel {
+  flex: 1 1 360px; max-width: 470px;
+  background: rgba(18, 22, 32, 0.9);
+  border: 1px solid #333; border-radius: 14px;
+  padding: 16px 18px;
+}
+
+.resultsPanel.wide { width: min(560px, 100%); }
+
+.resultsPanel h3 {
+  color: #fff; font-size: 16px; letter-spacing: 1px;
+  margin-bottom: 10px; text-transform: uppercase;
+}
+
+.resultTable {
+  width: 100%; border-collapse: collapse; color: #eee; font-size: 15px;
+}
+
+.resultTable th {
+  text-align: left; color: #888; font-size: 12px; letter-spacing: 1px;
+  padding: 4px 6px; border-bottom: 1px solid #444; text-transform: uppercase;
+}
+
+.resultTable td {
+  padding: 5px 6px; border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.resultTable tr:last-child td { border-bottom: none; }
+
+.resultTable th:first-child,
+.resultTable td:first-child { width: 44px; text-align: center; color: #aaa; }
+
+.resultTable td:last-child,
+.resultTable th:last-child { text-align: right; font-weight: bold; }
+
+.playerRow td { background: rgba(255, 0, 0, 0.16); }
+.playerRow td:first-child { color: #ff5555; }
+
+.championRow td { background: rgba(255, 215, 0, 0.14); }
+.championRow td:first-child { color: #ffd700; }
+
+.colorDot {
+  display: inline-block; width: 11px; height: 11px; border-radius: 50%;
+  margin-right: 9px; vertical-align: middle;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+}
+
+.championLine {
+  color: #ddd; font-size: 24px; text-align: center;
+}
+.championName { color: #ffd700; font-weight: bold; }
+
+.resultsButton {
+  margin-top: 18px;
+  padding: 14px 48px; font-size: 18px; font-weight: bold;
+  background: #ff0000; color: #fff; border: none; border-radius: 50px;
+  cursor: pointer; letter-spacing: 2px; text-transform: uppercase;
+  transition: all 0.2s;
+}
+.resultsButton:hover { background: #cc0000; transform: scale(1.04); }
+
+@media (max-width: 700px) {
+  #resultsContent h2 { font-size: 27px; }
+  .resultsPanel { flex-basis: 100%; }
+}
 
 #pauseOverlay {
   position: fixed; top: 0; left: 0; width: 100%; height: 100%;
@@ -142,6 +270,15 @@ canvas { display: block; }
   font-size: 36px; font-weight: bold; color: #00ff00;
   text-shadow: 0 0 20px rgba(0,255,0,0.5); z-index: 20;
   display: none; animation: pulse 0.5s ease-in-out;
+}
+
+#gamepadNotice {
+  position: absolute; bottom: 150px; left: 50%; transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.85); border: 1px solid #ff0000;
+  border-radius: 20px; padding: 8px 22px;
+  color: #fff; font-size: 14px; font-weight: bold; letter-spacing: 1px;
+  white-space: nowrap; pointer-events: none; z-index: 12;
+  display: none; opacity: 0; transition: opacity 0.3s;
 }
 
 @keyframes pulse {
