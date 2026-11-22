@@ -10,11 +10,27 @@
 
 <div id="startScreen">
   <h1>F1 ARCADE</h1>
-  <h2>Campeonato · 5 circuitos</h2>
-  <p class="startInfo">3 vueltas por carrera · 10 pilotos · Puntos para el top 10</p>
-  <p style="color:#888; margin-bottom:15px;">Elige el color de tu auto:</p>
+  <h2 id="menuSubtitle">Campeonato · 5 circuitos</h2>
+  <p class="startInfo" id="menuInfo">3 vueltas por carrera · 10 pilotos · Puntos para el top 10</p>
+
+  <div class="mode-select">
+    <button class="modeBtn selected" data-mode="championship" onclick="setGameMode('championship')">CAMPEONATO</button>
+    <button class="modeBtn" data-mode="quick" onclick="setGameMode('quick')">CARRERA RÁPIDA</button>
+  </div>
+
+  <p class="startInfo" id="circuitHint" style="display:none; margin-bottom:8px;">Elige el circuito:</p>
+  <div class="circuit-picker" id="circuitPicker"></div>
+
+  <p class="startInfo" id="weatherHint" style="display:none; margin:2px 0 8px;">Elige el clima:</p>
+  <div class="weather-picker" id="weatherPicker">
+    <button class="weatherOption selected" data-weather="dry" onclick="selectQuickWeather('dry')">SECO</button>
+    <button class="weatherOption" data-weather="rain" onclick="selectQuickWeather('rain')">LLUVIA</button>
+    <button class="weatherOption" data-weather="night" onclick="selectQuickWeather('night')">NOCHE</button>
+  </div>
+
+  <p style="color:#888; margin-bottom:10px;">Elige el color de tu auto:</p>
   <div class="color-picker" id="colorPicker"></div>
-  <button id="startBtn" onclick="startChampionship()">INICIAR CAMPEONATO</button>
+  <button id="startBtn" onclick="startGame()">INICIAR CAMPEONATO</button>
   <div class="controls-info">
     <span>↑/W</span> Acelerar &nbsp; <span>↓/S</span> Frenar &nbsp; <span>←→/A D</span> Girar<br>
     <span>P</span> Pausar &nbsp; <span>M</span> Silenciar &nbsp; <span>SPACE</span> Freno de mano &nbsp; <span>Z</span> Nitro<br>
@@ -23,6 +39,12 @@
 </div>
 
 <div id="countdown"></div>
+
+<div id="wrongWay">
+  <div id="wrongWayTitle">SENTIDO CONTRARIO</div>
+  <div id="wrongWaySub">Gira para volver a la pista</div>
+  <div id="wrongWayCount">3</div>
+</div>
 
 <div id="speedFX"></div>
 
@@ -37,16 +59,17 @@
   <div id="position">
     <div id="posValue">1</div>
     <div id="posTotal">/ 10</div>
+    <div id="lapDeficit"></div>
   </div>
   <div id="speedometer">
     <div id="speedValue">0</div>
     <div id="speedUnit">KM/H</div>
   </div>
   <div id="gearDisplay">N</div>
+  <div id="shiftLights"></div>
   <div id="nitroLabel">NITRO</div>
   <div id="nitroBar"><div id="nitroFill"></div></div>
   <div id="minimap"><canvas id="minimapCanvas" width="180" height="180"></canvas></div>
-  <div id="overtake">¡ADELANTO!</div>
   <div id="gamepadNotice"></div>
 </div>
 
