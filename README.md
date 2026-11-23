@@ -25,6 +25,7 @@ Juego de carreras arcade de Fórmula 1 hecho con **HTML, CSS y JavaScript**, usa
 ### Autos
 - Modelos low-poly de F1 con casco y visera del piloto, halo, espejos, suspensiones, sidepods, difusor, alerones con endplates y neumáticos con banda de compuesto.
 - Ruedas delanteras direccionales: giran con la dirección y ruedan según la velocidad (también en los rivales).
+- Humo en los neumáticos al frenar bruscamente o derrapar.
 - Alerones y casco con **color de contraste** respecto a la carrocería.
 - Color del auto seleccionable desde el menú.
 - Caja de **8 marchas** con cambios progresivos, corte de encendido, sonido de cambio y luces de cambio (shift lights).
@@ -39,6 +40,7 @@ Juego de carreras arcade de Fórmula 1 hecho con **HTML, CSS y JavaScript**, usa
 - Indicador **−1 VUELTA** cuando el jugador queda doblado: pasar autos no da posiciones hasta recuperar la vuelta.
 - Aviso de **sentido contrario** con cuenta regresiva de 3 segundos y reubicación automática en la pista si no se corrige.
 - Pausa, silencio y notificaciones del mando.
+- Tras cruzar la meta, el coche hace una vuelta de enfriamiento siguiendo la pista y se detiene dentro del asfalto.
 
 ## Requisitos
 - Navegador moderno con **WebGL** (Chrome, Firefox, Edge, Safari).

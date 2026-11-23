@@ -158,6 +158,8 @@ let skidSource = null, skidFilter = null, skidGain = null;
 let rainSource = null, rainFilter = null, rainGain = null;
 let skidIntensity = 0;
 let skidMarkGroup, skidMarkPool = [], skidMarkIndex = 0;
+let smokePool = [], smokeIndex = 0, smokeSpawnAccumulator = 0, smokeWheelSide = -1;
+const SMOKE_COUNT = 64;
 let flagArmGroup = null, flagPivot = null, flagPersonGroup = null;
 let stadiumFlags = [];
 let mirrorCamera;
@@ -192,6 +194,8 @@ let playerPrevT = 0;
 let playerCrossedStart = false;
 let playerFinishing = false;
 let pendingPlayerFinish = null;
+let playerFinishT = 0;
+let playerFinishLateral = 0;
 
 // Handling
 const MAX_SPEED = 52;
@@ -275,6 +279,7 @@ function init() {
   scene.add(weatherGroup);
 
   initSkidMarks();
+  initSmoke();
 
   // Cars and championship drivers
   createDriversAndCars();
@@ -438,6 +443,128 @@ function addSkidMark(x, z, angle) {
   mark.position.set(x, 0.068, z);
   mark.rotation.set(-Math.PI / 2, angle, 0);
   mark.visible = true;
+}
+
+// ===================== HUMO DE NEUMÁTICOS =====================
+function makeSmokeTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 128;
+  canvas.height = 128;
+  const ctx = canvas.getContext('2d');
+
+  // Soft main puff plus a few off-centre blobs so it does not look like a
+  // perfect circle.
+  const grad = ctx.createRadialGradient(64, 64, 4, 64, 64, 62);
+  grad.addColorStop(0, 'rgba(255,255,255,0.9)');
+  grad.addColorStop(0.4, 'rgba(245,245,245,0.55)');
+  grad.addColorStop(1, 'rgba(230,230,230,0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 128, 128);
+
+  for (let i = 0; i < 7; i++) {
+    const x = 32 + Math.random() * 64;
+    const y = 32 + Math.random() * 64;
+    const r = 18 + Math.random() * 26;
+    const g = ctx.createRadialGradient(x, y, 1, x, y, r);
+    g.addColorStop(0, 'rgba(255,255,255,0.28)');
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  return tex;
+}
+
+function initSmoke() {
+  const texture = makeSmokeTexture();
+
+  for (let i = 0; i < SMOKE_COUNT; i++) {
+    const material = new THREE.SpriteMaterial({
+      map: texture,
+      color: 0xd8d8d8,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      fog: true,
+    });
+    const sprite = new THREE.Sprite(material);
+    sprite.visible = false;
+    sprite.renderOrder = 3;
+    scene.add(sprite);
+    smokePool.push({
+      sprite,
+      life: 0,
+      maxLife: 1,
+      startOpacity: 0,
+      baseScale: 1,
+      velocity: new THREE.Vector3(),
+    });
+  }
+}
+
+function clearSmoke() {
+  smokeIndex = 0;
+  smokeSpawnAccumulator = 0;
+  smokeWheelSide = -1;
+  for (const puff of smokePool) {
+    puff.sprite.visible = false;
+    puff.sprite.material.opacity = 0;
+    puff.life = 0;
+  }
+}
+
+function spawnSmoke(x, y, z, intensity) {
+  if (smokePool.length === 0) return;
+
+  const puff = smokePool[smokeIndex];
+  smokeIndex = (smokeIndex + 1) % smokePool.length;
+
+  puff.life = 0;
+  puff.maxLife = 0.9 + Math.random() * 0.8;
+  puff.startOpacity = 0.28 + intensity * 0.22 + Math.random() * 0.06;
+  puff.baseScale = 0.55 + Math.random() * 0.45 + intensity * 0.35;
+  puff.velocity.set(
+    (Math.random() - 0.5) * 1.4,
+    0.7 + Math.random() * 0.8,
+    (Math.random() - 0.5) * 1.4
+  );
+
+  puff.sprite.position.set(
+    x + (Math.random() - 0.5) * 0.25,
+    y,
+    z + (Math.random() - 0.5) * 0.25
+  );
+  puff.sprite.scale.set(puff.baseScale, puff.baseScale, 1);
+  puff.sprite.material.opacity = puff.startOpacity;
+  puff.sprite.material.rotation = Math.random() * Math.PI * 2;
+  puff.sprite.visible = true;
+}
+
+function updateSmoke(dt) {
+  for (const puff of smokePool) {
+    if (!puff.sprite.visible) continue;
+
+    puff.life += dt;
+    const k = puff.life / puff.maxLife;
+    if (k >= 1) {
+      puff.sprite.visible = false;
+      puff.sprite.material.opacity = 0;
+      continue;
+    }
+
+    puff.sprite.position.addScaledVector(puff.velocity, dt);
+    puff.velocity.multiplyScalar(Math.max(0, 1 - 1.6 * dt));
+    puff.velocity.y += 0.35 * dt;
+
+    const scale = puff.baseScale * (1 + k * 2.1);
+    puff.sprite.scale.set(scale, scale, 1);
+    puff.sprite.material.opacity = puff.startOpacity * (1 - k) * (1 - k * 0.35);
+  }
 }
 
 function buildCircuit(circuit) {
@@ -3155,6 +3282,32 @@ function updatePlayer(dt) {
     }
   }
 
+  // ----- Tyre smoke: hard braking and drifting/sliding -----
+  const hardBraking = onAsphalt && brakeAmount > 0.45 && playerSpeed > 10;
+  let smokeRate = 0;
+  if (skidding) smokeRate += 8 + skidAmount * 18;
+  if (hardBraking) smokeRate += 6 + brakeAmount * 8;
+
+  if (smokeRate > 0) {
+    smokeSpawnAccumulator += smokeRate * dt;
+    const cosW = Math.cos(playerAngle);
+    const sinW = Math.sin(playerAngle);
+
+    while (smokeSpawnAccumulator >= 1) {
+      smokeSpawnAccumulator -= 1;
+      smokeWheelSide = -smokeWheelSide;
+
+      // Hard braking smokes the front tyres; sliding/drifting the rear ones.
+      const frontWheel = hardBraking && (!skidding || Math.random() < 0.45);
+      const wheelZ = frontWheel ? 1.8 : -1.5;
+      const wx = playerCar.position.x + cosW * 1.1 * smokeWheelSide + sinW * wheelZ;
+      const wz = playerCar.position.z - sinW * 1.1 * smokeWheelSide + cosW * wheelZ;
+      const intensity = frontWheel ? brakeAmount : skidAmount;
+
+      spawnSmoke(wx, 0.35, wz, Math.max(0.15, intensity));
+    }
+  }
+
   // Update car rotation
   playerCar.rotation.y = playerAngle;
 
@@ -3187,7 +3340,7 @@ function updatePlayer(dt) {
       playerLap++;
       playerCheckpoints = 0;
       if (playerLap > TOTAL_LAPS) {
-        beginPlayerFinish();
+        beginPlayerFinish(currentT);
         return;
       }
       playTone(660, 0.2, 0.1);
@@ -3801,9 +3954,16 @@ function drawMinimap() {
   ctx.stroke();
 }
 
-function beginPlayerFinish() {
+function beginPlayerFinish(currentT) {
   if (playerFinishing) return;
   playerFinishing = true;
+
+  // Remember where the car crossed the line so the cool-down lap can follow
+  // the track instead of driving straight off at the first corner.
+  playerFinishT = typeof currentT === 'number'
+    ? ((currentT % 1) + 1) % 1
+    : getTrackPosition(playerCar.position.x, playerCar.position.z, playerPrevT).t;
+  playerFinishLateral = Math.max(-7.5, Math.min(7.5, playerLateral));
 
   // Lock in the classification and points at the moment of crossing the line
   registerFinish('player');
@@ -3820,13 +3980,50 @@ function beginPlayerFinish() {
 }
 
 function updatePlayerFinishCoast(dt) {
-  // The player keeps rolling across the line and brakes to a stop
+  // The player keeps rolling along the track and brakes to a stop
   playerSpeed = Math.max(0, playerSpeed - 8 * dt);
-  playerCar.position.x += Math.sin(playerAngle) * playerSpeed * dt;
-  playerCar.position.z += Math.cos(playerAngle) * playerSpeed * dt;
-  playerCar.rotation.y = playerAngle;
 
-  animateWheels(playerCar, 0, playerSpeed, dt);
+  if (!isFinite(playerFinishT)) playerFinishT = 0;
+  if (!isFinite(playerFinishLateral)) playerFinishLateral = 0;
+
+  const trackLength = trackCurve.getLength();
+  if (trackLength > 0) {
+    playerFinishT = (playerFinishT + (playerSpeed * dt) / trackLength) % 1;
+
+    // Come back to the centre of the track as the car slows down
+    playerFinishLateral += (0 - playerFinishLateral) * Math.min(1, dt * 0.9);
+
+    const point = trackCurve.getPointAt(playerFinishT);
+    const tangent = trackCurve.getTangentAt(playerFinishT);
+    const normalX = -tangent.z;
+    const normalZ = tangent.x;
+
+    playerCar.position.set(
+      point.x + normalX * playerFinishLateral,
+      0,
+      point.z + normalZ * playerFinishLateral
+    );
+
+    // Align the car with the track smoothly
+    const targetAngle = Math.atan2(tangent.x, tangent.z);
+    let angleDiff = targetAngle - playerAngle;
+    while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+    while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+    playerAngle += angleDiff * Math.min(1, dt * 5);
+    playerCar.rotation.y = playerAngle;
+
+    // Flat body and contact shadows while coasting
+    playerCar.rotation.z = 0;
+    if (playerCar.userData.shadowHolder) {
+      playerCar.userData.shadowHolder.rotation.z = 0;
+    }
+
+    const visualSteer = getAIVisualSteer(playerFinishT, tangent, trackLength);
+    animateWheels(playerCar, visualSteer, playerSpeed, dt);
+  } else {
+    playerCar.rotation.y = playerAngle;
+    animateWheels(playerCar, 0, playerSpeed, dt);
+  }
 
   if (playerCar.userData.taillightMaterial) {
     playerCar.userData.taillightMaterial.emissiveIntensity = playerSpeed > 0.3 ? 1.2 : 0;
@@ -3960,6 +4157,7 @@ function gameLoop(timestamp) {
   pollGamepad();
 
   updatePlayer(currentDt);
+  if (!isPaused) updateSmoke(currentDt);
   updateGearbox(currentDt);
   updateWrongWay(currentDt, playerPrevT);
   updateRain(currentDt);
@@ -4248,6 +4446,8 @@ function resetRaceState() {
   playerPrevT = 0;
   playerCrossedStart = false;
   playerFinishing = false;
+  playerFinishT = 0;
+  playerFinishLateral = 0;
   currentGear = 0;
   gearRpm = 0.2;
   gearShiftCut = 0;
@@ -4298,6 +4498,7 @@ function startRace(index) {
 
   buildCircuit(CIRCUITS[index]);
   clearSkidMarks();
+  clearSmoke();
   resetRaceState();
   placeCarsOnGrid();
   applyWeather(currentWeather);
