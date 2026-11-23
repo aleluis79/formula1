@@ -2,7 +2,6 @@
 const TOTAL_LAPS = 3;
 const NUM_AI = 9;
 const TRACK_WIDTH = 18;
-const CAR_LENGTH = 4.5;
 const CAR_WIDTH = 2;
 
 const CAR_COLORS = [
@@ -126,6 +125,8 @@ let playerGridSlot = NUM_AI;
 let isPaused = false;
 let isFinished = false;
 let isCountingDown = false;
+let countdownToken = 0;
+let renderLoopStarted = false;
 let raceStarted = false;
 let raceTimer = 0;
 let lastTime = 0;
@@ -165,6 +166,7 @@ let cameraSpeedFactor = 0;
 let gamepadInput = { connected: false, throttle: 0, brake: 0, steer: 0, handbrake: false, nitro: false };
 let gamepadPrev = { pause: false, mute: false };
 let gamepadNoticeTimer = null;
+let gamepadNoticeHideTimer = null;
 
 // Player state
 let playerSpeed = 0;
@@ -279,13 +281,10 @@ function init() {
   window.addEventListener('resize', onResize);
   window.addEventListener('keydown', onKeyDown);
   window.addEventListener('keyup', onKeyUp);
+  window.addEventListener('blur', onWindowBlur);
 
-  // Build the first circuit and place the cars on its grid
-  buildCircuit(CIRCUITS[0]);
-  placeCarsOnGrid();
-
-  // Start render loop
-  requestAnimationFrame(gameLoop);
+  // The world is built and the render loop started by startRace(), once the
+  // player has chosen a mode and a circuit.
 }
 
 function shuffleArray(arr) {
@@ -1563,7 +1562,6 @@ function makeAdTextures() {
 function generateStartArea() {
   const startPoint = trackCurve.getPointAt(0);
   const startTangent = trackCurve.getTangentAt(0);
-  const startNormal = new THREE.Vector3(-startTangent.z, 0, startTangent.x).normalize();
   const trackLength = trackCurve.getLength();
 
   // ---------- Start/finish line ----------
@@ -2097,6 +2095,7 @@ function generateClouds() {
 
   for (let c = 0; c < 28; c++) {
     const cloud = new THREE.Group();
+    cloud.userData.isCloud = true;
     const puffs = 4 + Math.floor(Math.random() * 3);
     const baseSize = 9 + Math.random() * 9;
 
@@ -2128,6 +2127,12 @@ function generateCornerSigns() {
   if (n === 0) return;
 
   const trackLength = trackCurve.getLength();
+  // On the flat Las Vegas layout the painted curb is 4 m wide per side, so
+  // signs need to be further out to keep their boards off the track.
+  const flatTrack = !!(CIRCUITS[currentCircuitIndex] && CIRCUITS[currentCircuitIndex].flatTrack);
+  const paintedHalfWidth = TRACK_WIDTH / 2 + (flatTrack ? 4 : 2);
+  // Board half-width (1.9 m) plus a small margin.
+  const signLateral = paintedHalfWidth + 3;
   const threshold = 0.008;
   const minRun = 4;
   let corners = [];
@@ -2205,7 +2210,7 @@ function generateCornerSigns() {
     const pos = point.clone().add(normal.clone().multiplyScalar(lateral));
 
     // Do not put a board over another part of the track (e.g. at the crossing)
-    if (getTrackPosition(pos.x, pos.z).dist < TRACK_WIDTH / 2 + 1) return;
+    if (getTrackPosition(pos.x, pos.z).dist < paintedHalfWidth + 2.5) return;
 
     // Avoid piling up signs from corners that are very close together
     if (placed.some(p => Math.hypot(p.x - pos.x, p.z - pos.z) < 22)) return;
@@ -2248,7 +2253,7 @@ function generateCornerSigns() {
     const normalX = -tanB.z;
     const normalZ = tanB.x;
     const sideDot = (tanB.x - tanA.x) * normalX + (tanB.z - tanA.z) * normalZ;
-    const lateral = (sideDot > 0 ? -1 : 1) * (TRACK_WIDTH / 2 + 2.5);
+    const lateral = (sideDot > 0 ? -1 : 1) * signLateral;
 
     const t100 = ((corner.startT - 100 / trackLength) % 1 + 1) % 1;
     const t50 = ((corner.startT - 50 / trackLength) % 1 + 1) % 1;
@@ -2594,6 +2599,10 @@ function onKeyDown(e) {
   keys[e.key.toLowerCase()] = true;
   keys[e.code] = true;
 
+  // Ignore keyboard auto-repeat, otherwise holding P or M would toggle
+  // pause/mute over and over.
+  if (e.repeat) return;
+
   if (e.key.toLowerCase() === 'p') togglePause();
   if (e.key.toLowerCase() === 'm') toggleMute();
 }
@@ -2604,6 +2613,10 @@ function togglePause() {
   document.getElementById('pauseOverlay').style.display = isPaused ? 'flex' : 'none';
 }
 
+function isRaceSessionActive() {
+  return !!scene && !isFinished && (raceStarted || isCountingDown);
+}
+
 function toggleMute() {
   isMuted = !isMuted;
   if (isMuted) {
@@ -2611,6 +2624,9 @@ function toggleMute() {
     if (audioCtx && skidGain) skidGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.1);
     if (audioCtx && rainGain) rainGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.1);
   } else {
+    // Never resurrect the engine/rain/skid loops from the menu or the
+    // results screen: only a running race should make noise.
+    if (!isRaceSessionActive()) return;
     if (!engineOsc) startEngineSound();
     else updateEngineSound();
     if (!skidSource) startSkidSound();
@@ -2628,6 +2644,19 @@ function toggleMute() {
 function onKeyUp(e) {
   keys[e.key.toLowerCase()] = false;
   keys[e.code] = false;
+}
+
+// If the window loses focus mid-corner the keyup may never arrive, so clear
+// every input to avoid the car accelerating/warning on its own afterwards.
+function onWindowBlur() {
+  for (const key in keys) keys[key] = false;
+  gamepadInput.throttle = 0;
+  gamepadInput.brake = 0;
+  gamepadInput.steer = 0;
+  gamepadInput.handbrake = false;
+  gamepadInput.nitro = false;
+  gamepadPrev.pause = false;
+  gamepadPrev.mute = false;
 }
 
 // ===================== MANDO =====================
@@ -2726,9 +2755,10 @@ function showGamepadNotice(text) {
   el.style.opacity = '1';
 
   if (gamepadNoticeTimer) clearTimeout(gamepadNoticeTimer);
+  if (gamepadNoticeHideTimer) clearTimeout(gamepadNoticeHideTimer);
   gamepadNoticeTimer = setTimeout(() => {
     el.style.opacity = '0';
-    setTimeout(() => { el.style.display = 'none'; }, 300);
+    gamepadNoticeHideTimer = setTimeout(() => { el.style.display = 'none'; }, 300);
   }, 2500);
 }
 
@@ -2786,11 +2816,6 @@ function getTrackCurvature(t) {
   const j = (i + 1) % n;
   const f = x - Math.floor(x);
   return trackCurvature[i] * (1 - f) + trackCurvature[j] * f;
-}
-
-function isOnTrack(x, z) {
-  const info = getTrackPosition(x, z);
-  return info.dist < TRACK_WIDTH / 2;
 }
 
 function setWrongWayUI(visible, seconds) {
@@ -2888,13 +2913,15 @@ function updatePlayer(dt) {
   const brake = keys['arrowdown'] || keys['s'];
   const left = keys['arrowleft'] || keys['a'];
   const right = keys['arrowright'] || keys['d'];
-  const handbrake = keys['Space'] || keys['SHIFT'];
+  const handbrake = keys['Space'] || keys['shift'];
 
   // Keyboard and gamepad inputs combined
   const throttle = accel ? 1 : gamepadInput.throttle;
   const brakeAmount = brake ? 1 : gamepadInput.brake;
   const handbrakeActive = handbrake || gamepadInput.handbrake;
   const nitroActive = keys['z'] || gamepadInput.nitro;
+  const nitroRequested = nitroActive && throttle > 0.05;
+  const nitroBoosting = playerNitro > 0 && nitroRequested;
 
   // Taillights only glow while braking
   const taillightMat = playerCar.userData.taillightMaterial;
@@ -2904,7 +2931,7 @@ function updatePlayer(dt) {
 
   // Acceleration (with a short automatic launch at the green light)
   if (throttle > 0.05) {
-    const nitroBoost = (playerNitro > 0 && nitroActive) ? 8 : 0;
+    const nitroBoost = nitroBoosting ? 8 : 0;
     // Aero drag: acceleration tapers off as the car approaches its top speed,
     // so the last gears feel long and F1-like instead of hitting a hard wall.
     const speedRatio = Math.min(Math.max(playerSpeed, 0) / MAX_SPEED, 1);
@@ -2929,11 +2956,13 @@ function updatePlayer(dt) {
     playerDrift = Math.max(playerDrift - dt * 5, 0);
   }
 
-  // Nitro recharge
-  if (throttle < 0.05) {
-    playerNitro = Math.min(100, playerNitro + 10 * dt);
-  } else {
+  // Nitro only drains while the button is held (with throttle); otherwise it
+  // recharges. Draining while empty (instead of recharging) prevents the boost
+  // from stuttering on/off around 0%.
+  if (nitroRequested) {
     playerNitro = Math.max(0, playerNitro - 15 * dt);
+  } else {
+    playerNitro = Math.min(100, playerNitro + 10 * dt);
   }
 
   // Speed limits
@@ -2942,7 +2971,8 @@ function updatePlayer(dt) {
   // Off-track penalty (track the car locally so the crossing can't steal its progress)
   const pos = getTrackPosition(playerCar.position.x, playerCar.position.z, playerPrevT);
   if (pos.dist > TRACK_WIDTH / 2) {
-    playerSpeed *= 0.97;
+    // dt-based slowdown so the penalty does not depend on the frame rate
+    playerSpeed *= Math.max(0, 1 - 1.8 * dt);
   }
 
   // ----- Steering with a cornering grip limit -----
@@ -3482,7 +3512,12 @@ function renderRearviewMirror() {
   renderer.setScissorTest(true);
   renderer.setViewport(x, y, w, h);
   renderer.setScissor(x, y, w, h);
+  // The main render already refreshed the shadow map this frame; reusing it
+  // avoids rendering every shadow-casting object a second time for the mirror.
+  const shadowAutoUpdate = renderer.shadowMap.autoUpdate;
+  renderer.shadowMap.autoUpdate = false;
   renderer.render(scene, mirrorCamera);
+  renderer.shadowMap.autoUpdate = shadowAutoUpdate;
   renderer.setScissorTest(false);
   renderer.setViewport(0, 0, window.innerWidth, window.innerHeight);
 }
@@ -3736,7 +3771,12 @@ function finishRace() {
 function startCountdown() {
   isCountingDown = true;
   const countdownEl = document.getElementById('countdown');
+  // Clear the previous "¡GO!" so it does not flash before the new countdown
+  countdownEl.textContent = '';
   countdownEl.style.display = 'block';
+
+  // Invalidate any setTimeout still pending from a previous countdown
+  const token = ++countdownToken;
 
   // Light up start lights
   const lights = worldGroup.children.filter(c => c.userData.isStartLight);
@@ -3755,35 +3795,48 @@ function startCountdown() {
   ];
 
   function nextStep() {
+    if (token !== countdownToken) return;
+
     if (step >= steps.length) {
       countdownEl.style.display = 'none';
       isCountingDown = false;
-      raceStarted = true;
-      playGoBeep();
-
-      // Turn off red lights
-      lights.forEach(l => {
-        l.material.emissive.setHex(0x00ff00);
-        l.material.emissiveIntensity = 1;
-      });
       return;
     }
 
-    countdownEl.textContent = steps[step].text;
-    if (step > 0 && step < steps.length - 1) {
-      playCountdownBeep(false);
-    } else if (step === steps.length - 1) {
-      playGoBeep();
+    const current = steps[step];
+    countdownEl.textContent = current.text;
+
+    if (step > 0) {
+      if (step === steps.length - 1) {
+        // The lights go green exactly when GO appears: hand control over
+        // immediately instead of half a second later.
+        raceStarted = true;
+        isCountingDown = false;
+        playGoBeep();
+
+        lights.forEach(l => {
+          l.material.emissive.setHex(0x00ff00);
+          l.material.emissiveIntensity = 1;
+        });
+      } else {
+        playCountdownBeep(false);
+      }
     }
 
     step++;
-    setTimeout(nextStep, steps[step - 1].delay);
+    setTimeout(nextStep, current.delay);
   }
 
   setTimeout(nextStep, 500);
 }
 
 // ===================== GAME LOOP =====================
+function startRenderLoop() {
+  if (renderLoopStarted) return;
+  renderLoopStarted = true;
+  requestAnimationFrame(gameLoop);
+}
+
 function gameLoop(timestamp) {
   requestAnimationFrame(gameLoop);
 
@@ -4162,6 +4215,7 @@ function startRace(index) {
   if (currentWeather === 'rain') startRainSound();
   else stopRainSound();
   startCountdown();
+  startRenderLoop();
 }
 
 // ===================== MENÚ INICIAL =====================
@@ -4365,6 +4419,11 @@ function applyWeather(weather) {
 
   // Wet tarmac: darker and glossier
   worldGroup.traverse(obj => {
+    // Clouds use fog:false, so at night they would stay bright and ruin the
+    // dark sky. Hide them once the stars/moon take over.
+    if (obj.userData.isCloud) {
+      obj.visible = currentWeather !== 'night';
+    }
     if (!obj.isMesh || !obj.userData.isRoad || !obj.material) return;
     const mat = obj.material;
     if (currentWeather === 'rain') {
@@ -4515,13 +4574,46 @@ function createNightWeather() {
     fog: false,
   });
 
-  const stations = 24;              // both sides are lit: 48 masts
-  const mastCount = stations * 2;
+  const stations = 24;              // both sides can be lit: up to 48 masts
   const poleGeo = new THREE.CylinderGeometry(0.24, 0.36, 21, 6);
   const headGeo = new THREE.BoxGeometry(4.2, 0.6, 0.8);
   const lampGeo = new THREE.BoxGeometry(0.62, 0.18, 0.55);
   const poolGeo = new THREE.PlaneGeometry(1, 1);
 
+  // Masts are placed outside the painted curb. The flat Las Vegas layout
+  // paints a 4 m curb band on each side (the normal tracks use 2 m), so its
+  // towers need to be pushed further out or the lamp heads sit on the track.
+  const flatTrack = !!(CIRCUITS[currentCircuitIndex] && CIRCUITS[currentCircuitIndex].flatTrack);
+  const paintedHalfWidth = TRACK_WIDTH / 2 + (flatTrack ? 4 : 2);
+  const mastLateral = paintedHalfWidth + (flatTrack ? 5 : 3);
+  // Clearance from any other branch: pole and lamp head must stay outside the
+  // painted edge of every stretch of track.
+  const minMastDistance = paintedHalfWidth + 2.5;
+
+  const stationData = [];
+  const mastSpots = [];
+
+  for (let i = 0; i < stations; i++) {
+    const t = 0.035 + (i / stations) * 0.93;
+    const point = trackCurve.getPointAt(t);
+    const tangent = trackCurve.getTangentAt(t);
+    const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
+    const yaw = Math.atan2(tangent.x, tangent.z);
+    stationData.push({ point, yaw });
+
+    for (let side = -1; side <= 1; side += 2) {
+      const mx = point.x + normal.x * side * mastLateral;
+      const mz = point.z + normal.z * side * mastLateral;
+
+      // The mast's own branch is always `mastLateral` away, so anything closer
+      // than this (or than the clearance) belongs to another part of the track.
+      if (getTrackPosition(mx, mz).dist < minMastDistance) continue;
+
+      mastSpots.push({ x: mx, z: mz, yaw, side, station: i });
+    }
+  }
+
+  const mastCount = mastSpots.length;
   const poleInst = new THREE.InstancedMesh(poleGeo, poleMat, mastCount);
   const headInst = new THREE.InstancedMesh(headGeo, poleMat, mastCount);
   const lampInst = new THREE.InstancedMesh(lampGeo, lampMat, mastCount * 5);
@@ -4539,56 +4631,48 @@ function createNightWeather() {
   let poolIndex = 0;
   let lightCount = 0;
 
-  for (let i = 0; i < stations; i++) {
-    const t = 0.035 + (i / stations) * 0.93;
-    const point = trackCurve.getPointAt(t);
-    const tangent = trackCurve.getTangentAt(t);
-    const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
-    const yaw = Math.atan2(tangent.x, tangent.z);
-    qMast.setFromEuler(new THREE.Euler(0, yaw, 0));
-
-    // Pool on the track
+  // Soft pools of light stay on the track, one per station.
+  stationData.forEach(({ point }) => {
     poolScale.set(72, 72, 1);
     m4.compose(pos.set(point.x, 0.06, point.z), qPool, poolScale);
     poolInst.setMatrixAt(poolIndex++, m4);
+  });
 
-    for (let side = -1; side <= 1; side += 2) {
-      const mx = point.x + normal.x * side * (TRACK_WIDTH / 2 + 5);
-      const mz = point.z + normal.z * side * (TRACK_WIDTH / 2 + 5);
+  mastSpots.forEach(spot => {
+    qMast.setFromEuler(new THREE.Euler(0, spot.yaw, 0));
 
-      m4.compose(pos.set(mx, 10.5, mz), qMast, one);
-      poleInst.setMatrixAt(mastIndex, m4);
+    m4.compose(pos.set(spot.x, 10.5, spot.z), qMast, one);
+    poleInst.setMatrixAt(mastIndex, m4);
 
-      m4.compose(pos.set(mx, 21, mz), qMast, one);
-      headInst.setMatrixAt(mastIndex, m4);
+    m4.compose(pos.set(spot.x, 21, spot.z), qMast, one);
+    headInst.setMatrixAt(mastIndex, m4);
 
-      const cosYaw = Math.cos(yaw);
-      const sinYaw = Math.sin(yaw);
-      for (let l = 0; l < 5; l++) {
-        const lx = (l - 2) * 0.76;
-        m4.compose(
-          pos.set(mx + cosYaw * lx, 20.66, mz - sinYaw * lx),
-          qMast,
-          one
-        );
-        lampInst.setMatrixAt(lampIndex++, m4);
-      }
-
-      const glow = new THREE.Sprite(glowMat);
-      glow.position.set(mx, 21, mz);
-      glow.scale.set(9, 9, 1);
-      weatherGroup.add(glow);
-
-      if (side === 1 && i % 4 === 0 && lightCount < 6) {
-        const light = new THREE.PointLight(0xffe9b8, 1.0, 105, 2);
-        light.position.set(mx, 20.6, mz);
-        weatherGroup.add(light);
-        lightCount++;
-      }
-
-      mastIndex++;
+    const cosYaw = Math.cos(spot.yaw);
+    const sinYaw = Math.sin(spot.yaw);
+    for (let l = 0; l < 5; l++) {
+      const lx = (l - 2) * 0.76;
+      m4.compose(
+        pos.set(spot.x + cosYaw * lx, 20.66, spot.z - sinYaw * lx),
+        qMast,
+        one
+      );
+      lampInst.setMatrixAt(lampIndex++, m4);
     }
-  }
+
+    const glow = new THREE.Sprite(glowMat);
+    glow.position.set(spot.x, 21, spot.z);
+    glow.scale.set(9, 9, 1);
+    weatherGroup.add(glow);
+
+    if (spot.side === 1 && spot.station % 4 === 0 && lightCount < 6) {
+      const light = new THREE.PointLight(0xffe9b8, 1.0, 105, 2);
+      light.position.set(spot.x, 20.6, spot.z);
+      weatherGroup.add(light);
+      lightCount++;
+    }
+
+    mastIndex++;
+  });
 
   // Extra pools over the start/finish and the grid
   [0, 0.99, 0.965, 0.94].forEach(t => {
@@ -4659,8 +4743,6 @@ function stopRainSound() {
 }
 
 function startChampionship() {
-  document.getElementById('startScreen').style.display = 'none';
-
   if (!scene) {
     init();
   }
@@ -4678,11 +4760,12 @@ function startChampionship() {
   });
 
   startRace(0);
+  // Only cover the start screen once the world has been built, so a WebGL/CDN
+  // failure leaves the menu visible instead of a black page.
+  document.getElementById('startScreen').style.display = 'none';
 }
 
 function startQuickRace(index) {
-  document.getElementById('startScreen').style.display = 'none';
-
   if (!scene) {
     init();
   }
@@ -4699,6 +4782,7 @@ function startQuickRace(index) {
   });
 
   startRace(Math.max(0, Math.min(CIRCUITS.length - 1, index)));
+  document.getElementById('startScreen').style.display = 'none';
 }
 
 // Populate the colour picker and the start menu before the game starts

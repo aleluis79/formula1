@@ -236,6 +236,10 @@ canvas { display: block; }
 
 .controls-info span { color: #ff0000; font-weight: bold; }
 
+.buildTag {
+  margin-top: 8px; color: #4b4b4b; font-size: 11px; letter-spacing: 1px;
+}
+
 #countdown {
   position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
   font-size: 150px; font-weight: bold; color: #ff0000;
@@ -244,7 +248,7 @@ canvas { display: block; }
 }
 
 #wrongWay {
-  position: fixed; top: 32%; left: 50%; transform: translateX(-50%);
+  position: fixed; top: max(38%, 264px); left: 50%; transform: translateX(-50%);
   display: none; text-align: center; z-index: 60;
   background: rgba(110, 0, 0, 0.72);
   border: 3px solid #ff2222; border-radius: 18px;
