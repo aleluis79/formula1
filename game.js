@@ -2825,8 +2825,33 @@ function onKeyDown(e) {
   // pause/mute over and over.
   if (e.repeat) return;
 
-  if (e.key.toLowerCase() === 'p') togglePause();
-  if (e.key.toLowerCase() === 'm') toggleMute();
+  const key = e.key.toLowerCase();
+  if (key === 'p') togglePause();
+  if (key === 'm') toggleMute();
+}
+
+function toggleFullscreen() {
+  const doc = document;
+  const fullscreenElement = doc.fullscreenElement ||
+    doc.webkitFullscreenElement ||
+    doc.webkitCurrentFullScreenElement;
+
+  if (fullscreenElement) {
+    const exit = doc.exitFullscreen || doc.webkitExitFullscreen;
+    if (!exit) return;
+    try {
+      const result = exit.call(doc);
+      if (result && typeof result.catch === 'function') result.catch(() => {});
+    } catch (e) {}
+    return;
+  }
+
+  const request = doc.documentElement.requestFullscreen || doc.documentElement.webkitRequestFullscreen;
+  if (!request) return;
+  try {
+    const result = request.call(doc.documentElement);
+    if (result && typeof result.catch === 'function') result.catch(() => {});
+  } catch (e) {}
 }
 
 function togglePause() {
@@ -5109,6 +5134,12 @@ function startQuickRace(index) {
 // Populate the colour picker and the start menu before the game starts
 setupColorPicker();
 setupStartMenu();
+
+// Fullscreen shortcut: available in the menu and during a race
+window.addEventListener('keydown', e => {
+  if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.code === 'KeyF' || e.key.toLowerCase() === 'f') toggleFullscreen();
+});
 
 // Prevent scrolling
 document.addEventListener('keydown', e => {

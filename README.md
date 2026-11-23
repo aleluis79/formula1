@@ -76,6 +76,7 @@ http://localhost:8000
 | Nitro | Z | RB / Y |
 | Pausa | P | START |
 | Silenciar | M | — |
+| Pantalla completa | F | — |
 
 ## Estructura del proyecto
 
