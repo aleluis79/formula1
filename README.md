@@ -17,17 +17,18 @@ Juego de carreras arcade de Fórmula 1 hecho con **HTML, CSS y JavaScript**, usa
 
 ### Clima
 - **Seco**: condiciones normales.
-- **Lluvia**: partículas de lluvia, sonido ambiental, asfalto mojado y menos agarre/frenada para el jugador y la IA.
+- **Lluvia**: partículas de lluvia, sonido ambiental, asfalto mojado, banda verde en los neumáticos y menos agarre/frenada para el jugador y la IA.
 - **Noche**: cielo oscuro con estrellas y luna, iluminación atenuada y torres de luz con charcos de luz sobre la pista.
 - En **Campeonato** el clima es aleatorio en cada carrera (con al menos una carrera no seca).
 - En **Carrera rápida** se elige manualmente (Seco / Lluvia / Noche).
 
 ### Autos
 - Modelos low-poly de F1 con casco y visera del piloto, halo, espejos, suspensiones, sidepods, difusor, alerones con endplates y neumáticos con banda de compuesto.
+- Ruedas delanteras direccionales: giran con la dirección y ruedan según la velocidad (también en los rivales).
 - Alerones y casco con **color de contraste** respecto a la carrocería.
 - Color del auto seleccionable desde el menú.
 - Caja de **8 marchas** con cambios progresivos, corte de encendido, sonido de cambio y luces de cambio (shift lights).
-- Velocidad punta de **350 km/h** mostrada en el HUD.
+- Velocidad punta de **350 km/h** mostrada en el HUD, ampliable hasta ~392 km/h con nitro.
 
 ### Sonido
 - Motor sintetizado con Web Audio (varias capas, turbo, admisión y limitador).

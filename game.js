@@ -4,6 +4,10 @@ const NUM_AI = 9;
 const TRACK_WIDTH = 18;
 const CAR_WIDTH = 2;
 
+// Tire sidewall compound band colour
+const TIRE_SIDEWALL_DRY_COLOR = 0xd32f2f;
+const TIRE_SIDEWALL_RAIN_COLOR = 0x00c853;
+
 const CAR_COLORS = [
   { name: 'Rojo', value: 0xcc0000 },
   { name: 'Azul', value: 0x0044cc },
@@ -191,7 +195,8 @@ let pendingPlayerFinish = null;
 
 // Handling
 const MAX_SPEED = 52;
-const SPEED_DISPLAY_FACTOR = 350 / MAX_SPEED; // HUD never goes above 350 km/h
+const NITRO_SPEED_FACTOR = 1.12; // top-speed multiplier while the nitro is held
+const SPEED_DISPLAY_FACTOR = 350 / MAX_SPEED; // HUD reaches 392 km/h with nitro
 const GRIP_LATERAL = 36; // maximum lateral acceleration (m/s²) the car can sustain
 const PLAYER_ACCEL = 16; // player acceleration (m/s²)
 const AI_ACCEL = 16;     // rivals accelerate at the same rate at the start
@@ -2349,7 +2354,7 @@ function createCar(color, isPlayer) {
   const visorMat = new THREE.MeshStandardMaterial({ color: 0x07080a, roughness: 0.08, metalness: 0.9 });
   const mirrorMat = new THREE.MeshStandardMaterial({ color: 0xcfe3f2, roughness: 0.1, metalness: 1 });
   const tireMat = new THREE.MeshStandardMaterial({ color: 0x0e0e0e, roughness: 0.95 });
-  const sidewallMat = new THREE.MeshStandardMaterial({ color: 0xd32f2f, roughness: 0.6 });
+  const sidewallMat = new THREE.MeshStandardMaterial({ color: TIRE_SIDEWALL_DRY_COLOR, roughness: 0.6 });
 
   const parts = [];
   const addBox = (w, h, d, x, y, z, mat, rx = 0, ry = 0, rz = 0) => {
@@ -2486,31 +2491,77 @@ function createCar(color, isPlayer) {
 
   // ---------- Wheels ----------
   const wheelGeo = new THREE.CylinderGeometry(0.4, 0.4, 0.4, 18);
+  const frontWheels = { steer: 0, spin: 0, steerPivots: [], spinGroups: [] };
+
   for (let s = -1; s <= 1; s += 2) {
     for (const wz of [1.8, -1.5]) {
-      const tire = new THREE.Mesh(wheelGeo, tireMat);
-      tire.position.set(s * 1.1, 0.4, wz);
-      tire.rotation.z = Math.PI / 2;
-      parts.push(tire);
+      const isFront = wz > 0;
 
-      const rim = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.42, 14), metalMat);
-      rim.position.set(s * 1.1, 0.4, wz);
-      rim.rotation.z = Math.PI / 2;
-      parts.push(rim);
+      if (isFront) {
+        // Front wheels need their own pivot to steer with the input, and a
+        // spin group inside it so they can roll with the car's speed.
+        const pivot = new THREE.Group();
+        pivot.position.set(s * 1.1, 0.4, wz);
+        const spin = new THREE.Group();
+        pivot.add(spin);
+        carGroup.add(pivot);
+        frontWheels.steerPivots.push(pivot);
+        frontWheels.spinGroups.push(spin);
 
-      const disc = new THREE.Mesh(new THREE.CircleGeometry(0.22, 16), metalMat);
-      disc.position.set(s * 1.302, 0.4, wz);
-      disc.rotation.y = s > 0 ? Math.PI / 2 : -Math.PI / 2;
-      parts.push(disc);
+        const wheelParts = [];
 
-      const band = new THREE.Mesh(new THREE.RingGeometry(0.235, 0.33, 18), sidewallMat);
-      band.position.set(s * 1.303, 0.4, wz);
-      band.rotation.y = s > 0 ? Math.PI / 2 : -Math.PI / 2;
-      parts.push(band);
+        const tire = new THREE.Mesh(wheelGeo.clone(), tireMat);
+        tire.rotation.z = Math.PI / 2;
+        wheelParts.push(tire);
 
-      addCylinder(0.055, 0.055, 0.04, 8, s * 1.33, 0.4, wz, accentMat, 0, 0, Math.PI / 2);
+        const rim = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.42, 14), metalMat);
+        rim.rotation.z = Math.PI / 2;
+        wheelParts.push(rim);
+
+        const disc = new THREE.Mesh(new THREE.CircleGeometry(0.22, 16), metalMat);
+        disc.position.x = s * 0.202;
+        disc.rotation.y = s > 0 ? Math.PI / 2 : -Math.PI / 2;
+        wheelParts.push(disc);
+
+        const band = new THREE.Mesh(new THREE.RingGeometry(0.235, 0.33, 18), sidewallMat);
+        band.position.x = s * 0.203;
+        band.rotation.y = s > 0 ? Math.PI / 2 : -Math.PI / 2;
+        wheelParts.push(band);
+
+        const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 0.04, 8), accentMat);
+        hub.position.x = s * 0.23;
+        hub.rotation.z = Math.PI / 2;
+        wheelParts.push(hub);
+
+        spin.add(mergeMeshParts(wheelParts));
+      } else {
+        // Rear wheels are static and can stay merged with the body.
+        const tire = new THREE.Mesh(wheelGeo, tireMat);
+        tire.position.set(s * 1.1, 0.4, wz);
+        tire.rotation.z = Math.PI / 2;
+        parts.push(tire);
+
+        const rim = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.42, 14), metalMat);
+        rim.position.set(s * 1.1, 0.4, wz);
+        rim.rotation.z = Math.PI / 2;
+        parts.push(rim);
+
+        const disc = new THREE.Mesh(new THREE.CircleGeometry(0.22, 16), metalMat);
+        disc.position.set(s * 1.302, 0.4, wz);
+        disc.rotation.y = s > 0 ? Math.PI / 2 : -Math.PI / 2;
+        parts.push(disc);
+
+        const band = new THREE.Mesh(new THREE.RingGeometry(0.235, 0.33, 18), sidewallMat);
+        band.position.set(s * 1.303, 0.4, wz);
+        band.rotation.y = s > 0 ? Math.PI / 2 : -Math.PI / 2;
+        parts.push(band);
+
+        addCylinder(0.055, 0.055, 0.04, 8, s * 1.33, 0.4, wz, accentMat, 0, 0, Math.PI / 2);
+      }
     }
   }
+
+  carGroup.userData.wheels = frontWheels;
 
   // Player number on the nose
   if (isPlayer) {
@@ -2588,8 +2639,52 @@ function createCar(color, isPlayer) {
   // Materials that carry the car's paint colour (used to recolour the player)
   carGroup.userData.paintMaterials = [bodyMat];
   carGroup.userData.accentMaterials = [accentMat, helmetMat];
+  carGroup.userData.sidewallMaterials = [sidewallMat];
 
   return carGroup;
+}
+
+// ===================== RUEDAS =====================
+const WHEEL_RADIUS = 0.4;
+
+// The front wheels are separate groups so they can follow the steering input
+// and roll with the car's speed. The rear wheels stay merged with the body.
+function animateWheels(car, steer, speed, dt) {
+  const wheels = car.userData && car.userData.wheels;
+  if (!wheels) return;
+
+  // Small smoothing so the wheels do not snap between keyboard states.
+  wheels.steer += (steer - wheels.steer) * Math.min(1, dt * 12);
+  wheels.spin = (wheels.spin + (speed / WHEEL_RADIUS) * dt) % (Math.PI * 2);
+
+  for (let i = 0; i < wheels.steerPivots.length; i++) {
+    wheels.steerPivots[i].rotation.y = wheels.steer;
+  }
+  for (let i = 0; i < wheels.spinGroups.length; i++) {
+    wheels.spinGroups[i].rotation.x = wheels.spin;
+  }
+}
+
+function resetCarWheels(car) {
+  const wheels = car && car.userData && car.userData.wheels;
+  if (!wheels) return;
+
+  wheels.steer = 0;
+  wheels.spin = 0;
+  wheels.steerPivots.forEach(pivot => { pivot.rotation.y = 0; });
+  wheels.spinGroups.forEach(spin => { spin.rotation.x = 0; });
+}
+
+// Visual steering for the AI: how much the track's tangent changes just ahead.
+function getAIVisualSteer(progress, tangent, trackLength) {
+  const aheadT = (((progress + 6 / trackLength) % 1) + 1) % 1;
+  const ahead = trackCurve.getTangentAt(aheadT);
+
+  let delta = Math.atan2(ahead.x, ahead.z) - Math.atan2(tangent.x, tangent.z);
+  while (delta > Math.PI) delta -= Math.PI * 2;
+  while (delta < -Math.PI) delta += Math.PI * 2;
+
+  return Math.max(-0.4, Math.min(0.4, delta * 1.4));
 }
 
 // ===================== LÓGICA DEL JUEGO =====================
@@ -2965,8 +3060,14 @@ function updatePlayer(dt) {
     playerNitro = Math.min(100, playerNitro + 10 * dt);
   }
 
-  // Speed limits
-  playerSpeed = Math.max(-5, Math.min(MAX_SPEED * weatherSpeedFactor(), playerSpeed));
+  // Speed limits: nitro raises the top speed, and the car falls back smoothly
+  // to the normal limit when the boost ends instead of snapping down.
+  const normalMaxSpeed = MAX_SPEED * weatherSpeedFactor();
+  const boostedMaxSpeed = normalMaxSpeed * NITRO_SPEED_FACTOR;
+  playerSpeed = Math.max(-5, Math.min(boostedMaxSpeed, playerSpeed));
+  if (!nitroBoosting && playerSpeed > normalMaxSpeed) {
+    playerSpeed = Math.max(normalMaxSpeed, playerSpeed - 12 * dt);
+  }
 
   // Off-track penalty (track the car locally so the crossing can't steal its progress)
   const pos = getTrackPosition(playerCar.position.x, playerCar.position.z, playerPrevT);
@@ -3064,6 +3165,10 @@ function updatePlayer(dt) {
     playerCar.userData.shadowHolder.rotation.z = -playerCar.rotation.z;
   }
 
+  // Front wheels follow the steering input (a bit less lock at high speed)
+  const visualSteer = steerInput * (0.52 - 0.22 * Math.min(speedAbs / MAX_SPEED, 1));
+  animateWheels(playerCar, visualSteer, playerSpeed, dt);
+
   // Check checkpoints and laps
   const currentT = pos.t;
 
@@ -3127,6 +3232,7 @@ function updateFinishedCar(aiCar, state, dt, trackLength) {
 
   aiCar.position.set(point.x + normalX * lateralOffset, 0, point.z + normalZ * lateralOffset);
   aiCar.rotation.y = Math.atan2(tangent.x, tangent.z);
+  animateWheels(aiCar, getAIVisualSteer(state.progress, tangent, trackLength), state.speed, dt);
 
   state.braking = state.speed > 0.5;
   if (aiCar.userData.taillightMaterial) {
@@ -3311,6 +3417,7 @@ function updateAI(dt) {
     aiCar.position.z = point.z + normalZ * lateralOffset;
     aiCar.position.y = 0;
     aiCar.rotation.y = Math.atan2(tangent.x, tangent.z);
+    animateWheels(aiCar, getAIVisualSteer(state.progress, tangent, trackLength), state.speed, dt);
 
     if (aiCar.userData.taillightMaterial) {
       aiCar.userData.taillightMaterial.emissiveIntensity = state.braking ? 1.2 : 0;
@@ -3719,6 +3826,8 @@ function updatePlayerFinishCoast(dt) {
   playerCar.position.z += Math.cos(playerAngle) * playerSpeed * dt;
   playerCar.rotation.y = playerAngle;
 
+  animateWheels(playerCar, 0, playerSpeed, dt);
+
   if (playerCar.userData.taillightMaterial) {
     playerCar.userData.taillightMaterial.emissiveIntensity = playerSpeed > 0.3 ? 1.2 : 0;
   }
@@ -3912,6 +4021,9 @@ function getGridOrder() {
 function placeCarsOnGrid() {
   cameraSpeedFactor = 0;
   playerLateral = 0;
+
+  resetCarWheels(playerCar);
+  aiCars.forEach(resetCarWheels);
 
   // Taillights off at the start
   if (playerCar.userData.taillightMaterial) {
@@ -4376,6 +4488,14 @@ function clearWeatherVisuals() {
 function applyWeather(weather) {
   currentWeather = weather === 'rain' || weather === 'night' ? weather : 'dry';
   clearWeatherVisuals();
+
+  // Rain tyres use a green sidewall band; dry/night keep the red compound.
+  const sidewallColor = currentWeather === 'rain' ? TIRE_SIDEWALL_RAIN_COLOR : TIRE_SIDEWALL_DRY_COLOR;
+  const cars = playerCar ? [playerCar, ...aiCars] : aiCars;
+  cars.forEach(car => {
+    if (!car || !car.userData.sidewallMaterials) return;
+    car.userData.sidewallMaterials.forEach(mat => mat.color.setHex(sidewallColor));
+  });
 
   const circuit = CIRCUITS[currentCircuitIndex] || CIRCUITS[0];
   const drySky = circuit.sky;
